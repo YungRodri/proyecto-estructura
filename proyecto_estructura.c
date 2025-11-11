@@ -37,7 +37,7 @@ struct Candidato {
     char partido[40];
     char tipo[20];     /* "Partido" o "Independiente" */
     int  firmasApoyo;
-    int  esValido;     /* 1 si aprobado por Servel */
+    int  esValido;     /* 1 si aprobado por Servel y 0 si no es aprobado*/
     int  id;           /* índice dentro del pool */
 };
 
