@@ -33,9 +33,9 @@ struct Persona {
 
 /* ====== Candidato (pool estático del Servel) ====== */
 struct Candidato {
-    struct Persona datos;
-    char partido[40];
-    char tipo[20];     /* "Partido" o "Independiente" */
+    struct Persona *datos;
+    char *partido[40];
+    char *tipo[20];     /* "Partido" o "Independiente" */
     int  firmasApoyo;
     int  esValido;     /* 1 si aprobado por Servel y 0 si no es aprobado*/
     int  id;           /* índice dentro del pool */
@@ -43,7 +43,7 @@ struct Candidato {
 
 /* ====== Votante (lista DOBLEMENTE enlazada por mesa) ====== */
 struct DVotante {
-    struct Persona datos;
+    struct Persona *datos;
     int  habilitado;       /* 1 puede votar */
     int  haVotado;         /* 1 ya votó */
     int  idxCandVoto;      /* 0..nCands-1 dentro de la ELECCIÓN, o IDX_SIN_VOTO */
