@@ -126,6 +126,8 @@ struct SistemaElectoral {
 
 
 
+
+//valida que un candidato cumpla
 int validarDatosCanditado(struct Candidato *candidato){
     int contadorValidador = 0;
 
@@ -155,6 +157,9 @@ int validarDatosCanditado(struct Candidato *candidato){
 
 }
 
+
+
+//
 int ValidacionDeCandidatos (struct Servel *servel){
     int i, contadorDeValidos = 0;
 
@@ -168,7 +173,7 @@ int ValidacionDeCandidatos (struct Servel *servel){
 
 }
 
-
+// llena un arreglo con los candidatos que si cumplieron los requisitos
 struct Candidato **rellenarCandidatosValidos(struct Servel *servel){
 
     int i,TotalValidados = 0, k = 0;
