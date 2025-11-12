@@ -122,7 +122,81 @@ struct SistemaElectoral {
     struct Servel *servel;
     struct Tricel *tricel;
 };
-// Aqui hice el menu el dia 10 de octubre 
+// Aqui hice el menu el dia 10 de octubre
+
+
+
+int validarDatosCanditado(struct Candidato *candidato){
+    int contadorValidador = 0;
+
+    if (candidato->datos.edad >= 35) contadorValidador ++;
+
+    if (strcmp(candidato->datos.nacionalidad,"chilena") == 0) contadorValidador++;
+
+    if(strcmp(candidato->tipo,"independiente") == 0){
+        if (candidato->firmasApoyo > 100000) contadorValidador ++;
+
+    }
+
+
+    if(strcmp(candidato->tipo,"independiente") == 0){
+
+        if (contadorValidador == 3) return 1;
+
+        else return 0;
+    }
+
+
+
+    if (contadorValidador == 2) return 1;
+
+    return 0;
+
+
+}
+
+int ValidacionDeCandidatos (struct Servel *servel){
+    int i, contadorDeValidos = 0;
+
+    for (i = 0; i < servel->totalCandidatos; i ++){
+        servel->candidatos[i].esValido=validarDatosCanditado(&servel->candidatos[i]);
+
+        if (servel->candidatos[i].esValido == 1) contadorDeValidos++;
+    }
+
+    return contadorDeValidos;
+
+}
+
+
+struct Candidato **rellenarCandidatosValidos(struct Servel *servel){
+
+    int i,TotalValidados = 0, k = 0;
+    struct Candidato **candidatos = NULL;
+    TotalValidados = ValidacionDeCandidatos(servel);
+
+    if (TotalValidados == 0){
+        printf("No hay candidatos validos");
+        return NULL;
+    }
+
+    candidatos = (struct Candidato **) malloc(TotalValidados * sizeof(struct Candidato *));
+
+    for (i = 0; i < servel->totalCandidatos; i ++){
+
+        if (servel->candidatos[i].esValido == 1){
+            candidatos[k] = &servel->candidatos[i];
+            k ++;
+        }
+    }
+
+
+    printf("cantidad de candidatos validos = %d\n",TotalValidados);
+
+    return candidatos;
+
+}
+
 
 void menuServel(void)
 {
