@@ -25,9 +25,9 @@ struct SistemaElectoral;
 
 /* ====== Persona ====== */
 struct Persona {
-    char rut[12];
-    char nombre[50];
-    char nacionalidad[30];
+    char *rut[12];
+    char *nombre[50];
+    char *nacionalidad[30];
     int  edad;
 };
 
@@ -54,8 +54,8 @@ struct DVotante {
 /* ====== Mesa (nodo del ABB de una elección) ====== */
 struct NodoMesa {
     int  idMesa;
-    char comuna[40];
-    char direccion[100];
+    char *comuna[40];
+    char *direccion[100];
 
     int  votosCandidatos[MAX_CANDIDATOS]; /* usa 0..(nCands-1) de la elección */
     int  totalVotosEmitidos;
@@ -105,10 +105,10 @@ struct Resultado {
 /* ====== Servel: pool de candidatos + LISTA de elecciones ====== */
 struct Servel {
     struct Candidato candidatos[MAX_CANDIDATOS]; /* pool estático */
-    int   totalCandidatos;
+    int totalCandidatos;
 
     struct Eleccion *elecciones;                 /* cabeza de la lista simple */
-    int   totalVotantesRegistrados;              /* opcional global */
+    int totalVotantesRegistrados;              /* opcional global */
 };
 
 /* ====== Tricel: LISTA CIRCULAR de resultados ====== */
