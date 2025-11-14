@@ -1,0 +1,834 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define MAX_CANDIDATOS 20
+#define IDX_SIN_VOTO   -1
+
+/* Opcional: códigos de ronda/estado si los quieres como int */
+#define RONDA_PRIMERA   1
+#define RONDA_SEGUNDA   2
+#define ELEC_ABIERTA    1
+#define ELEC_CERRADA    2
+#define ELEC_PROCLAMADA 3
+
+/* ====== Forward declarations (porque hay punteros cruzados) ====== */
+struct Candidato;
+struct DVotante;
+struct NodoMesa;
+struct Eleccion;
+struct Resultado;
+struct Servel;
+struct Tricel;
+struct SistemaElectoral;
+
+/* ====== Persona ====== */
+struct Persona {
+    char *rut[12];
+    char *nombre[50];
+    char *nacionalidad[30];
+    int  edad;
+};
+
+/* ====== Candidato (pool estático del Servel) ====== */
+struct Candidato {
+    struct Persona *datos;
+    char *partido[40];
+    char *tipo[20];     /* "Partido" o "Independiente" */
+    int  firmasApoyo;
+    int  esValido;     /* 1 si aprobado por Servel */
+    int  id;           /* índice dentro del pool */
+};
+
+/* ====== Votante (lista DOBLEMENTE enlazada por mesa) ====== */
+struct DVotante {
+    struct Persona *datos;
+    int  habilitado;       /* 1 puede votar */
+    int  haVotado;         /* 1 ya votó */
+    int  idxCandVoto;      /* 0..nCands-1 dentro de la ELECCIÓN, o IDX_SIN_VOTO */
+    struct DVotante *ant;
+    struct DVotante *sig;
+};
+
+/* ====== Mesa (nodo del ABB de una elección) ====== */
+struct NodoMesa {
+    int  idMesa;
+    char *comuna[40];
+    char *direccion[100];
+
+    int  votosCandidatos[MAX_CANDIDATOS]; /* usa 0..(nCands-1) de la elección */
+    int  totalVotosEmitidos;
+    int  votosBlancos;
+    int  votosNulos;
+
+    struct DVotante *headV;  /* lista doble: cabeza */
+    struct DVotante *tailV;  /* lista doble: cola   */
+
+    struct NodoMesa *izq;    /* ABB por idMesa */
+    struct NodoMesa *der;
+};
+
+/* ====== Elección (nodo de LISTA SIMPLE en Servel) ====== */
+struct Eleccion {
+    int  id;
+    int  ronda;    /* RONDA_PRIMERA / RONDA_SEGUNDA */
+    int  estado;   /* ELEC_ABIERTA / ELEC_CERRADA / ELEC_PROCLAMADA */
+
+    struct Candidato *cands[MAX_CANDIDATOS]; /* arreglo compacto de punteros */
+    int   nCands;                             /* tamaño efectivo del arreglo */
+
+    struct NodoMesa *arbolMesas;              /* ABB propio de esta elección */
+
+    struct Eleccion *sig;                     /* siguiente elección (historial) */
+};
+
+/* ====== Resultado (nodo de LISTA CIRCULAR en Tricel) ====== */
+struct Resultado {
+    struct Eleccion  *eleccion;   /* referencia a la elección */
+    struct Candidato *ganador;    /* puntero a uno de eleccion->cands[idxGanador] */
+
+    int   totalMesas;
+    int   totalVotantesRegistrados;
+    int   totalVotantesVotaron;
+    int   votosValidos;
+    int   votosBlancos;
+    int   votosNulos;
+    float porcentajeParticipacion;               /* 0..100 */
+    float porcentajeCandidato[MAX_CANDIDATOS];   /* solo 0..(nCands-1) */
+    int   idxGanador;                            /* índice dentro del arreglo compacto */
+    float porcentajeGanador;
+
+    struct Resultado *sig;   /* anillo: lista circular simplemente enlazada */
+};
+
+/* ====== Servel: pool de candidatos + LISTA de elecciones ====== */
+struct Servel {
+    struct Candidato *candidatos[MAX_CANDIDATOS]; /* pool estático */
+    int   totalCandidatos;
+
+    struct Eleccion *elecciones;                 /* cabeza de la lista simple */
+    int   totalVotantesRegistrados;              /* opcional global */
+};
+
+/* ====== Tricel: LISTA CIRCULAR de resultados ====== */
+struct Tricel {
+    struct Resultado *headResultados;  /* NULL si vacío; si 1 nodo: head->sig == head */
+    int   totalResultados;
+};
+
+/* ====== Sistema (punteros a módulos en heap) ====== */
+struct SistemaElectoral {
+    struct Servel *servel;
+    struct Tricel *tricel;
+};
+void inicializarSistemaConDatos(struct SistemaElectoral *sistema) {
+    int i;
+
+    // Inicializar SERVEL
+    sistema->servel->totalCandidatos = 0;
+    sistema->servel->elecciones = NULL;
+    sistema->servel->totalVotantesRegistrados = 0;
+
+    // Inicializar TRICEL
+    sistema->tricel->headResultados = NULL;
+    sistema->tricel->totalResultados = 0;
+
+    printf("=== INICIALIZANDO SISTEMA CON DATOS DE PRUEBA ===\n");
+
+    // ===== AGREGAR CANDIDATOS DE PRUEBA =====
+    printf("\n1. Agregando candidatos...\n");
+
+    // Candidato 1: Gabriel Boric (válido)
+    struct Candidato *cand1 = (struct Candidato*)malloc(sizeof(struct Candidato));
+    struct Persona *pers1 = (struct Persona*)malloc(sizeof(struct Persona));
+
+    cand1->datos = pers1;
+
+    // Inicializar arrays de punteros
+    for(i = 0; i < 12; i++) pers1->rut[i] = NULL;
+    for(i = 0; i < 50; i++) pers1->nombre[i] = NULL;
+    for(i = 0; i < 30; i++) pers1->nacionalidad[i] = NULL;
+    for(i = 0; i < 40; i++) cand1->partido[i] = NULL;
+    for(i = 0; i < 20; i++) cand1->tipo[i] = NULL;
+
+    // Reservar memoria para strings
+    pers1->rut[0] = malloc(12); strcpy(pers1->rut[0], "123456789");
+    pers1->nombre[0] = malloc(50); strcpy(pers1->nombre[0], "Gabriel Boric");
+    pers1->nacionalidad[0] = malloc(30); strcpy(pers1->nacionalidad[0], "chilena");
+    pers1->edad = 40;
+
+    cand1->partido[0] = malloc(40); strcpy(cand1->partido[0], "Frente Amplio");
+    cand1->tipo[0] = malloc(20); strcpy(cand1->tipo[0], "Partido");
+    cand1->firmasApoyo = 0;
+    cand1->esValido = 1;  // Válido
+    cand1->id = sistema->servel->totalCandidatos;
+
+    sistema->servel->candidatos[sistema->servel->totalCandidatos] = cand1;
+    sistema->servel->totalCandidatos++;
+    printf("   Candidato 1: Gabriel Boric agregado (ID: %d)\n", cand1->id);
+
+    // Candidato 2: José Antonio Kast (válido)
+    struct Candidato *cand2 = (struct Candidato*)malloc(sizeof(struct Candidato));
+    struct Persona *pers2 = (struct Persona*)malloc(sizeof(struct Persona));
+
+    cand2->datos = pers2;
+
+    for(i = 0; i < 12; i++) pers2->rut[i] = NULL;
+    for(i = 0; i < 50; i++) pers2->nombre[i] = NULL;
+    for(i = 0; i < 30; i++) pers2->nacionalidad[i] = NULL;
+    for(i = 0; i < 40; i++) cand2->partido[i] = NULL;
+    for(i = 0; i < 20; i++) cand2->tipo[i] = NULL;
+
+    pers2->rut[0] = malloc(12); strcpy(pers2->rut[0], "987654321");
+    pers2->nombre[0] = malloc(50); strcpy(pers2->nombre[0], "Jose Antonio Kast");
+    pers2->nacionalidad[0] = malloc(30); strcpy(pers2->nacionalidad[0], "chilena");
+    pers2->edad = 58;
+
+    cand2->partido[0] = malloc(40); strcpy(cand2->partido[0], "Partido Republicano");
+    cand2->tipo[0] = malloc(20); strcpy(cand2->tipo[0], "Partido");
+    cand2->firmasApoyo = 0;
+    cand2->esValido = 1;
+    cand2->id = sistema->servel->totalCandidatos;
+
+    sistema->servel->candidatos[sistema->servel->totalCandidatos] = cand2;
+    sistema->servel->totalCandidatos++;
+    printf("   Candidato 2: Jose Antonio Kast agregado (ID: %d)\n", cand2->id);
+
+    // Candidato 3: Independiente INVÁLIDO (sin firmas)
+    struct Candidato *cand3 = (struct Candidato*)malloc(sizeof(struct Candidato));
+    struct Persona *pers3 = (struct Persona*)malloc(sizeof(struct Persona));
+
+    cand3->datos = pers3;
+
+    for(i = 0; i < 12; i++) pers3->rut[i] = NULL;
+    for(i = 0; i < 50; i++) pers3->nombre[i] = NULL;
+    for(i = 0; i < 30; i++) pers3->nacionalidad[i] = NULL;
+    for(i = 0; i < 40; i++) cand3->partido[i] = NULL;
+    for(i = 0; i < 20; i++) cand3->tipo[i] = NULL;
+
+    pers3->rut[0] = malloc(12); strcpy(pers3->rut[0], "555555555");
+    pers3->nombre[0] = malloc(50); strcpy(pers3->nombre[0], "Marco Enriquez");
+    pers3->nacionalidad[0] = malloc(30); strcpy(pers3->nacionalidad[0], "chilena");
+    pers3->edad = 50;
+
+    cand3->partido[0] = malloc(40); strcpy(cand3->partido[0], "Ninguno");
+    cand3->tipo[0] = malloc(20); strcpy(cand3->tipo[0], "Independiente");
+    cand3->firmasApoyo = 50000;  // Solo 50,000 (necesita 100,000)
+    cand3->esValido = 0;  // Inválido por falta de firmas
+    cand3->id = sistema->servel->totalCandidatos;
+
+    sistema->servel->candidatos[sistema->servel->totalCandidatos] = cand3;
+    sistema->servel->totalCandidatos++;
+    printf("   Candidato 3: Marco Enriquez agregado (ID: %d) - INVALIDO por firmas\n", cand3->id);
+
+    // ===== CREAR ELECCIONES DE PRUEBA =====
+    printf("\n2. Creando elecciones...\n");
+
+    // Elección 1: Primera vuelta 2021
+    struct Eleccion *elec1 = (struct Eleccion*)malloc(sizeof(struct Eleccion));
+    elec1->id = 20211;
+    elec1->ronda = RONDA_PRIMERA;
+    elec1->estado = ELEC_CERRADA;
+    elec1->nCands = 2;
+    for(i = 0; i < MAX_CANDIDATOS; i++) elec1->cands[i] = NULL;
+    elec1->cands[0] = cand1;  // Boric
+    elec1->cands[1] = cand2;  // Kast
+    elec1->arbolMesas = NULL;  // ABB vacío por ahora
+    elec1->sig = sistema->servel->elecciones;
+    sistema->servel->elecciones = elec1;
+    printf("   Eleccion 1: Primera vuelta 2021 creada (ID: %d)\n", elec1->id);
+
+    // Elección 2: Segunda vuelta 2021
+    struct Eleccion *elec2 = (struct Eleccion*)malloc(sizeof(struct Eleccion));
+    elec2->id = 20212;
+    elec2->ronda = RONDA_SEGUNDA;
+    elec2->estado = ELEC_PROCLAMADA;
+    elec2->nCands = 2;
+    for(i = 0; i < MAX_CANDIDATOS; i++) elec2->cands[i] = NULL;
+    elec2->cands[0] = cand1;  // Boric
+    elec2->cands[1] = cand2;  // Kast
+    elec2->arbolMesas = NULL;
+    elec2->sig = sistema->servel->elecciones;
+    sistema->servel->elecciones = elec2;
+    printf("   Eleccion 2: Segunda vuelta 2021 creada (ID: %d)\n", elec2->id);
+
+    printf("\n=== SISTEMA INICIALIZADO CON ÉXITO ===\n");
+    printf("Total candidatos: %d\n", sistema->servel->totalCandidatos);
+    printf("Total elecciones: 2\n");
+}
+/* Helpers textualización */
+char* txtRonda(int r) {
+    return (r == 1) ? "Primera" : (r == 2) ? "Segunda" : "Desconocida";
+}
+char* txtEstado(int e) {
+    return (e == ELEC_ABIERTA) ? "Abierta" :
+           (e == ELEC_CERRADA) ? "Cerrada" :
+           (e == ELEC_PROCLAMADA) ? "Proclamada" : "Desconocido";
+}
+
+/* Contar mesas en el ABB (nro de nodos) */
+int contarMesas(struct NodoMesa *raiz) {
+    if (raiz == NULL) return 0;
+    return 1 + contarMesas(raiz->izq) + contarMesas(raiz->der);
+}
+int validarDatosCanditado(struct Candidato *candidato)
+{
+    int contadorValidador = 0;
+
+    if (candidato == NULL || candidato->datos == NULL) return 0;
+
+    /* 1) Edad mínima */
+    if (candidato->datos->edad >= 35) contadorValidador++;
+
+    /* 2) Nacionalidad chilena (acepta "chilena" o "Chilena") */
+    if (strcmp(candidato->datos->nacionalidad, "chilena") == 0 ||
+        strcmp(candidato->datos->nacionalidad, "Chilena") == 0) {
+        contadorValidador++;
+    }
+
+    /* 3) Si es independiente, exigir firmas */
+    if (strcmp(candidato->tipo, "independiente") == 0 ||
+        strcmp(candidato->tipo, "Independiente") == 0) {
+
+        if (candidato->firmasApoyo > 100000) contadorValidador++;
+
+        /* Independiente: necesita las 3 */
+        return (contadorValidador == 3) ? 1 : 0;
+    }
+
+    /* Partido: basta edad + nacionalidad */
+    return (contadorValidador == 2) ? 1 : 0;
+}
+
+int ValidacionDeCandidatos(struct Servel *servel)
+{
+    int i, contadorDeValidos = 0;
+    if (servel == NULL) return 0;
+
+    for (i = 0; i < servel->totalCandidatos; i++) {
+        if (servel->candidatos[i] == NULL) continue;
+
+        servel->candidatos[i]->esValido =
+            validarDatosCanditado(servel->candidatos[i]);
+
+        if (servel->candidatos[i]->esValido == 1) contadorDeValidos++;
+    }
+    return contadorDeValidos;
+}
+
+struct Candidato **rellenarCandidatosValidos(struct Servel *servel,
+                                             int *outTotalValidados)
+{
+    int i, k, TotalValidados;
+    struct Candidato **candidatos;
+
+    if (servel == NULL) { if (outTotalValidados) *outTotalValidados = 0; return NULL; }
+
+    TotalValidados = ValidacionDeCandidatos(servel);
+    if (outTotalValidados) *outTotalValidados = TotalValidados;
+
+    if (TotalValidados == 0) {
+        printf("No hay candidatos validos\n");
+        return NULL;
+    }
+
+    /* Reservamos arreglo de punteros (sin free, como pediste) */
+    candidatos = (struct Candidato**) malloc(TotalValidados * sizeof(struct Candidato*));
+    if (candidatos == NULL) {
+        printf("No se pudo reservar memoria para candidatos validos.\n");
+        if (outTotalValidados) *outTotalValidados = 0;
+        return NULL;
+    }
+
+    k = 0;
+    for (i = 0; i < servel->totalCandidatos; i++) {
+        if (servel->candidatos[i] && servel->candidatos[i]->esValido == 1) {
+            candidatos[k++] = servel->candidatos[i];
+        }
+    }
+    printf("Cantidad de candidatos validos = %d\n", TotalValidados);
+    return candidatos;
+}
+
+int ValidarCandidatoPorId(struct Servel *servel, int id)
+{
+    int i;
+    if (servel == NULL) return -1;
+
+    for (i = 0; i < servel->totalCandidatos; ++i) {
+        if (servel->candidatos[i] && servel->candidatos[i]->id == id) {
+            servel->candidatos[i]->esValido =
+                validarDatosCanditado(servel->candidatos[i]);
+            return servel->candidatos[i]->esValido; /* 1 o 0 */
+        }
+    }
+    return -1; /* no existe */
+}
+void menuServel(struct Servel *servel)
+{
+    int indice = -1;
+    int c; /* para limpiar el buffer cuando haya error de entrada */
+
+    do
+    {
+        printf("\n-- SERVEL --\n");
+        printf("1) Agregar candidato \n");
+        printf("2) Listar candidatos \n");
+        printf("3) Marcar validez de candidato\n");
+        printf("4) Crear ELECCION (agregar al historial)\n");
+        printf("5) Listar ELECCIONES\n");
+        printf("6) Eliminar ELECCION\n");
+        printf("0) Volver\n");
+        printf("Opcion: ");
+
+        if (scanf("%d", &indice) != 1) {
+            printf("Entrada invalida.\n");
+            /* limpiar el resto de la linea para que no quede basura en el buffer */
+            while ((c = getchar()) != '\n' && c != EOF) { }
+            indice = -1;
+            continue;
+        }
+
+        switch (indice)
+        {
+            case 1:
+            {
+                struct Candidato *candidato = NULL;
+                struct Persona  *persona    = NULL;
+                int i;
+
+                if (servel->totalCandidatos >= MAX_CANDIDATOS) {
+                    printf("No hay mas espacio para candidatos.\n");
+                    break;
+                }
+
+                /* Reservar memoria para el candidato y su Persona */
+                candidato = (struct Candidato*) malloc(sizeof(struct Candidato));
+                if (candidato == NULL) {
+                    printf("Error de memoria para candidato.\n");
+                    break;
+                }
+
+                persona = (struct Persona*) malloc(sizeof(struct Persona));
+                if (persona == NULL) {
+                    printf("Error de memoria para persona.\n");
+                    /* candidato queda filtrado (memory leak), pero no se vuelve a usar */
+                    break;
+                }
+
+                candidato->datos = persona;
+
+                /* Inicializar los arreglos de punteros a NULL (no es obligatorio, pero ordenado) */
+                for (i = 0; i < 12; i++) {
+                    persona->rut[i] = NULL;
+                }
+                for (i = 0; i < 50; i++) {
+                    persona->nombre[i] = NULL;
+                }
+                for (i = 0; i < 30; i++) {
+                    persona->nacionalidad[i] = NULL;
+                }
+                for (i = 0; i < 40; i++) {
+                    candidato->partido[i] = NULL;
+                }
+                for (i = 0; i < 20; i++) {
+                    candidato->tipo[i] = NULL;
+                }
+
+                /* Reservamos SOLO el índice 0 de cada arreglo de punteros */
+                persona->rut[0]          = (char*) malloc(12 * sizeof(char));
+                persona->nombre[0]       = (char*) malloc(50 * sizeof(char));
+                persona->nacionalidad[0] = (char*) malloc(30 * sizeof(char));
+                candidato->partido[0]    = (char*) malloc(40 * sizeof(char));
+                candidato->tipo[0]       = (char*) malloc(20 * sizeof(char));
+
+                /* Si algún malloc falla, no agregamos el candidato y salimos del case.
+                   (Las memorias quedan filtradas, pero no se vuelven a usar). */
+                if (persona->rut[0] == NULL ||
+                    persona->nombre[0] == NULL ||
+                    persona->nacionalidad[0] == NULL ||
+                    candidato->partido[0] == NULL ||
+                    candidato->tipo[0] == NULL) {
+
+                    printf("Error de memoria para cadenas.\n");
+                    break;
+                }
+
+                /* ==== LECTURA DE DATOS (ya no se cae) ==== */
+
+                printf("Rut (sin puntos, sin guion): ");
+                if (scanf("%11s", persona->rut[0]) != 1)
+                {
+                    printf("Rut invalido.\n");
+                    break;
+                }
+
+                printf("Nombre: ");
+                if (scanf("%49s", persona->nombre[0]) != 1)
+                {
+                    printf("Nombre invalido.\n");
+                    break;
+                }
+
+                printf("Nacionalidad: ");
+                if (scanf("%29s", persona->nacionalidad[0]) != 1)
+                {
+                    printf("Nacionalidad invalida.\n");
+                    break;
+                }
+
+                printf("Edad: ");
+                if (scanf("%d", &persona->edad) != 1)
+                {
+                    printf("Edad invalida.\n");
+                    break;
+                }
+
+                printf("Partido: ");
+                if (scanf("%39s", candidato->partido[0]) != 1)
+                {
+                    printf("Partido invalido.\n");
+                    break;
+                }
+
+                printf("Tipo (Partido/Independiente): ");
+                if (scanf("%19s", candidato->tipo[0]) != 1)
+                {
+                    printf("Tipo invalido.\n");
+                    break;
+                }
+                /* Si quieres usar firmas para independientes: */
+                if (candidato->tipo[0] != NULL &&
+                    strcmp(candidato->tipo[0], "independiente") == 0) {
+
+                    printf("Cantidad de firmas de apoyo: ");
+                    if (scanf("%d", &candidato->firmasApoyo) != 1) {
+                        printf("Valor invalido, se consideran 0 firmas.\n");
+                        candidato->firmasApoyo = 0;
+                    }
+                    } else {
+                        candidato->firmasApoyo = 0;
+                    }
+
+                candidato->esValido = 0;
+                candidato->id = servel->totalCandidatos;
+
+                servel->candidatos[servel->totalCandidatos] = candidato;
+                servel->totalCandidatos++;
+
+                printf("Candidato agregado con id %d\n", candidato->id);
+            }
+                break;
+                /* Inicializar campos extra del candidato
+                candidato->firmasApoyo = 0;
+                candidato->esValido    = 0;
+                candidato->id          = servel->totalCandidatos;
+
+                 Guardar en el pool del Servel
+                servel->candidatos[servel->totalCandidatos] = candidato;
+                servel->totalCandidatos++;
+
+                printf("Candidato agregado con id %d\n", candidato->id);
+            }
+            break; */
+
+                /* ===== CASE 2: LISTAR CANDIDATOS (usa el Servel* pasado) ===== */
+            case 2: {
+                int i;
+                struct Candidato *candidato;
+                if (servel->totalCandidatos == 0) {
+                    printf("No hay candidatos en el pool.\n");
+                    break;
+                }
+                for (i = 0; i < servel->totalCandidatos; ++i) {
+                    candidato = servel->candidatos[i];
+                    if (candidato == NULL || candidato->datos == NULL) {
+                        printf("[%d] <slot vacio>\n", i);
+                        continue;
+                    }
+                    printf("[%d] ID=%d | RUT=%s | Nombre=%s | Nac=%s | Edad=%d | Tipo=%s | Partido=%s | Firmas=%d | Valido=%d\n",
+                           i,
+                           candidato->id,
+                           candidato->datos->rut[0],
+                           candidato->datos->nombre[0],
+                           candidato->datos->nacionalidad[0],
+                           candidato->datos->edad,
+                           candidato->tipo[0],
+                           candidato->partido[0],
+                           candidato->firmasApoyo,
+                           candidato->esValido);
+                }
+                break;
+            }
+            case 3: {
+                int id, resultado, i;
+
+                printf("ID candidato a validar por reglas: ");
+                if (scanf("%d", &id) != 1) {
+                    printf("ID invalido.\n");
+                    break;
+                }
+
+                resultado= ValidarCandidatoPorId(servel, id);
+
+                if (resultado == -1) {
+                    printf("No existe candidato con id %d.\n", id);
+                }
+                else {
+
+                    for (i = 0; i < servel->totalCandidatos; ++i) {
+                        if (servel->candidatos[i]!= NULL && servel->candidatos[i]->id == id) {
+                            printf("Validado: ID=%d | RUT=%s | Nombre=%s | esValido=%d\n",
+                                   servel->candidatos[i]->id,
+                                   servel->candidatos[i]->datos->rut[0],
+                                   servel->candidatos[i]->datos->nombre[0],
+                                   servel->candidatos[i]->esValido);
+                            break;
+                        }
+                    }
+                }
+                break;
+            }
+
+            case 4: { /* Crear ELECCION (agregar al historial) */
+                int idElec, ronda, i;
+                struct Eleccion *aux;
+
+                /* pedir datos */
+                printf("ID eleccion: ");
+                if (scanf("%d", &idElec) != 1) {
+                    printf("ID invalido.\n");
+                    break;
+                }
+
+                printf("Ronda (1=primera, 2=segunda): ");
+                if (scanf("%d", &ronda) != 1 || (ronda != 1 && ronda != 2)) {
+                    printf("Ronda invalida (usa 1 o 2).\n");
+                    break;
+                }
+
+                /* evitar ID duplicado */
+                aux = servel->elecciones;
+                while (aux != NULL) {
+                    if (aux->id == idElec) {
+                        printf("Ya existe una eleccion con id %d.\n", idElec);
+                        break;
+                    }
+                    aux = aux->sig;
+                }
+                if (aux != NULL) break; /* ya existía */
+
+                /* reservar nodo eleccion */
+                {
+                    struct Eleccion *nueva = (struct Eleccion*) malloc(sizeof(struct Eleccion));
+                    if (nueva == NULL) { printf("Error de memoria para eleccion.\n"); break; }
+
+                    /* inicializar */
+                    nueva->id      = idElec;
+                    nueva->ronda   = ronda;            /* 1 o 2 */
+                    nueva->estado  = ELEC_ABIERTA;     /* asegúrate de tener #define ELEC_ABIERTA 1 */
+                    nueva->nCands  = 0;
+                    for (i = 0; i < MAX_CANDIDATOS; ++i)
+                        nueva->cands[i] = NULL;
+
+                    nueva->arbolMesas = NULL;
+                    nueva->sig = NULL;
+                    /* insertar al inicio del historial */
+                    nueva->sig = servel->elecciones;
+                    servel->elecciones = nueva;
+
+                    printf("Eleccion creada: id=%d, ronda=%d, estado=ABIERTO, nCands=%d\n",
+                           nueva->id, nueva->ronda, nueva->nCands);
+                }
+                break;
+            }
+            case 5: { /* Listar ELECCIONES */
+                struct Eleccion *eleccion;
+                int idx = 0 , i;
+
+                if (servel->elecciones == NULL) {
+                    printf("No hay elecciones en el historial.\n");
+                    break;
+                }
+
+                eleccion = servel->elecciones;
+                while (eleccion != NULL) {
+                    int nMesas = contarMesas(eleccion->arbolMesas);
+
+                    printf("#%d -> ID=%d | Ronda=%s | Estado=%s | nCands=%d | Mesas=%d\n",
+                           idx,
+                           eleccion->id,
+                           txtRonda(eleccion->ronda),
+                           txtEstado(eleccion->estado),
+                           eleccion->nCands,
+                           nMesas);
+
+                    /* Si quieres mostrar los IDs de candidatos asociados (compacto): */
+                    if (eleccion->nCands > 0) {
+
+                        printf("   Candidatos: ");
+                        for (i = 0; i < eleccion->nCands; ++i) {
+                            if (eleccion->cands[i] != NULL) {
+                                printf("%d", eleccion->cands[i]->id);
+                            }
+                            else {
+                                printf("NULL");
+                            }
+                            if (i + 1 < eleccion->nCands) printf(", ");
+                        }
+                        printf("\n");
+                    }
+
+                    eleccion = eleccion->sig;
+                    idx++;
+                }
+                break;
+            }
+            case 6: { /* Eliminar ELECCION por ID (desenlazar sin liberar memoria) */
+                int id;
+                struct Eleccion *prev = NULL;
+                struct Eleccion *cur  = servel->elecciones;
+
+                printf("ID de la ELECCION a eliminar: ");
+                if (scanf("%d", &id) != 1) {
+                    printf("ID invalido.\n");
+                    break;
+                }
+
+                /* buscar nodo por id */
+                while (cur != NULL && cur->id != id) {
+                    prev = cur;
+                    cur  = cur->sig;
+                }
+
+                if (cur == NULL) {
+                    printf("No existe eleccion con id %d.\n", id);
+                    break;
+                }
+
+                /* desenlazar del historial (lista simple) */
+                if (prev == NULL) {
+                    /* eliminando cabeza */
+                    servel->elecciones = cur->sig;
+                } else {
+                    prev->sig = cur->sig;
+                }
+
+                /* Política actual: no liberar memoria ni subestructuras */
+                /* cur->arbolMesas = NULL;  // opcional, si quieres cortar referencia */
+                /* cur->sig = NULL;         // opcional, por seguridad */
+
+                printf("Eleccion %d eliminada del historial (memoria no liberada por politica actual).\n", id);
+                break;
+            }
+            case 0:
+                printf("Volviendo al menu principal...\n");
+                break;
+            default:
+                printf("Opcion invalida en Servel.\n");
+                break;
+        }
+    } while (indice != 0);
+}
+
+
+int main(void)
+{
+    struct SistemaElectoral *sistema;
+    int Eleccion_Usuario = -1;
+    sistema = (struct SistemaElectoral *)malloc(sizeof( struct SistemaElectoral));
+    if (sistema == NULL)
+    {
+        printf("ERROR AWNAOOOO.\n");
+        return 1;
+
+    }
+    sistema->servel = (struct Servel *)malloc(sizeof(struct Servel));
+    sistema->tricel = (struct Tricel *)malloc(sizeof(struct Tricel));
+
+    if (sistema->tricel == NULL || sistema->servel == NULL)
+    {
+        printf("ERROR AL CREAR EL TRICEL/SERVEL\n");
+        return 1;
+    }
+    // AQUI EMPIEZA EL SERVEL
+    sistema->servel->totalCandidatos = 0;
+    sistema->servel->elecciones = NULL;
+    sistema->servel->totalVotantesRegistrados = 0;
+    // AQUI EMPIEZA EL TRICEL
+    sistema->tricel->headResultados = NULL;
+    sistema->tricel->totalResultados = 0;
+    inicializarSistemaConDatos(sistema);
+    do
+    {
+        printf("\nSistema Principal\n");
+        printf("Seleccione\n");
+        printf("0) Salir\n");
+        printf("1) Servel\n");
+        printf("2) Tricel\n");
+        printf("3) Elecciones\n");
+        printf("4) Votantes\n");
+        printf("5) Reportes\n");
+        printf("6) Mesas\n");
+        printf("Opcion: ");
+
+        if (scanf("%d", &Eleccion_Usuario) != 1) {
+            printf("Entrada invalida.\n");
+            Eleccion_Usuario = -1;
+            continue;
+        }
+
+        switch (Eleccion_Usuario)
+        {
+            case 1:
+                menuServel(sistema->servel);
+                break;
+            case 2:
+                printf("tricel\n");
+                break;
+            case 3:
+                printf("elecciones\n");
+                break;
+            case 4:
+                printf("votantes\n");
+                break;
+            case 5:
+                printf("reportes\n");
+                break;
+            case 6:
+                printf("mesas\n");
+                break;
+            case 0:
+                printf("Saliendo...\n");
+                break;
+            default:
+                printf("Opcion invalida.\n");
+                break;
+        }
+
+    } while (Eleccion_Usuario != 0);
+
+    return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
