@@ -74,11 +74,11 @@ int ValidarSegundaVuelta (struct Resultado *resultados, struct Eleccion *eleccio
             resultados->ganador = eleccionActual->cands[i];
             resultados->idxGanador = i;
             resultados->porcentajeGanador=resultados->porcentajeCandidato[i];
-            return 1;
+            return 0;
         } ;
     }
 
-    return 0;
+    return 1;
 }
 
 
