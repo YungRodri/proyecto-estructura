@@ -1,0 +1,107 @@
+struct Candidato;
+struct DVotante;
+struct NodoMesa;
+struct Eleccion;
+struct Resultado;
+struct Servel;
+struct Tricel;
+struct SistemaElectoral;
+
+/* ====== Persona ====== */
+struct Persona {
+    char *rut[12];
+    char *nombre[50];
+    char *nacionalidad[30];
+    int  edad;
+};
+
+/* ====== Candidato (pool estático del Servel) ====== */
+struct Candidato {
+    struct Persona *datos;
+    char *partido[40];
+    char *tipo[20];     /* "Partido" o "Independiente" */
+    int  firmasApoyo;
+    int  esValido;     /* 1 si aprobado por Servel  0 Si no es aprobado*/
+    int  id;           /* índice dentro del pool */
+};
+
+/* ====== Votante (lista DOBLEMENTE enlazada por mesa) ====== */
+struct DVotante {
+    struct Persona *datos;
+    int  habilitado;       /* 1 puede votar */
+    int  haVotado;         /* 1 ya votó */
+    int  idxCandVoto;      /* 0..nCands-1 dentro de la ELECCIÓN, o IDX_SIN_VOTO */
+    struct DVotante *ant;
+    struct DVotante *sig;
+};
+
+/* ====== Mesa (nodo del ABB de una elección) ====== */
+struct NodoMesa {
+    int  idMesa;
+    char *comuna[40];
+    char *direccion[100];
+
+    int  votosCandidatos[MAX_CANDIDATOS]; /* usa 0..(nCands-1) de la elección */
+    int  totalVotosEmitidos;
+    int  votosBlancos;
+    int  votosNulos;
+
+    struct DVotante *headV;  /* lista doble: cabeza */
+    struct DVotante *tailV;  /* lista doble: cola   */
+
+    struct NodoMesa *izq;    /* ABB por idMesa */
+    struct NodoMesa *der;
+};
+
+/* ====== Elección (nodo de LISTA SIMPLE en Servel) ====== */
+struct Eleccion {
+    int  id;
+    int  ronda;    /* RONDA_PRIMERA / RONDA_SEGUNDA */
+    int  estado;   /* ELEC_ABIERTA / ELEC_CERRADA / ELEC_PROCLAMADA */
+
+    struct Candidato *cands[MAX_CANDIDATOS]; /* arreglo compacto de punteros */
+    int   nCands;                             /* tamaño efectivo del arreglo */
+
+    struct NodoMesa *arbolMesas;              /* ABB propio de esta elección */
+    struct Resultado * candidato_En_Resultado;
+    struct Eleccion *sig;                     /* siguiente elección (historial) */
+};
+
+/* ====== Resultado (nodo de LISTA CIRCULAR en Tricel) ====== */
+struct Resultado {
+    struct Candidato *ganador;    /* puntero a uno de eleccion->cands[idxGanador] */
+
+    int   totalMesas;
+    int   totalVotantesRegistrados;
+    int   totalVotantesVotaron;
+    int   votosValidos;
+    int   votosBlancos;
+    int   votosNulos;
+    float porcentajeParticipacion;               /* 0..100 */
+    float porcentajeCandidato[MAX_CANDIDATOS];   /* solo 0..(nCands-1) */
+    int   idxGanador;                            /* índice dentro del arreglo compacto */
+    float porcentajeGanador;
+
+    struct Resultado *sig;   /* anillo: lista circular simplemente enlazada */
+};
+
+/* ====== Servel: pool de candidatos + LISTA de elecciones ====== */
+struct Servel {
+    struct Candidato *candidatos[MAX_CANDIDATOS]; /* pool estático */
+    int   totalCandidatos;
+
+    struct Eleccion *elecciones;                 /* cabeza de la lista simple */
+    int   totalVotantesRegistrados;              /* opcional global */
+};
+
+/* ====== Tricel: LISTA CIRCULAR de resultados ====== */
+struct Tricel {
+    struct Resultado *headResultados;  /* NULL si vacío; si 1 nodo: head->sig == head */
+    int   totalResultados;
+};
+
+/* ====== Sistema (punteros a módulos en heap) ====== */
+struct SistemaElectoral {
+    struct Servel *servel;
+    struct Tricel *tricel;
+};
